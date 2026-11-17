@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The TV's REST API (port 8001: device info, app launch) is plain HTTP and only exists on the local
+  network. Android can't scope cleartext to "any LAN address", so it is allowed app-wide. The app
+  makes no other network requests, and key presses go over the pinned TLS socket on port 8002.
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>
