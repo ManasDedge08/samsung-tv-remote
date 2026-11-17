@@ -4,10 +4,11 @@ An Android remote for Samsung smart TVs, built for people whose physical remote 
 talks to the TV over your home Wi-Fi. No ads, no account, and nothing leaves your network.
 
 <p>
-  <img src="docs/remote.png" width="200" alt="Remote with touch surface, keys and app tiles">
-  <img src="docs/dpad.png" width="200" alt="Remote with arrow buttons instead of the touch surface">
-  <img src="docs/keyboard.png" width="200" alt="Keyboard sheet for typing on the TV">
-  <img src="docs/setup.png" width="200" alt="Choose Your TV setup screen">
+  <img src="docs/remote.png" width="160" alt="Remote with touch surface, keys and app tiles">
+  <img src="docs/dpad.png" width="160" alt="Remote with arrow buttons instead of the touch surface">
+  <img src="docs/voice.png" width="160" alt="Voice sheet listening for a command">
+  <img src="docs/keyboard.png" width="160" alt="Keyboard sheet for typing on the TV">
+  <img src="docs/setup.png" width="160" alt="Choose Your TV setup screen">
 </p>
 
 ## Features
@@ -22,6 +23,10 @@ talks to the TV over your home Wi-Fi. No ads, no account, and nothing leaves you
 - **Power.** Turns the TV off, and back on from standby or deep sleep.
 - **Keyboard.** Type on your phone to fill the TV's on-screen keyboard in Browser, Settings and
   sign-in screens. YouTube and Netflix have their own keyboards and won't receive it.
+- **Voice.** Hold the mic, speak and let go, like the mic button on the Samsung remote. Say "Open
+  Netflix", "Volume up 5", "Mute", "Go home" or "Turn off the TV". On YouTube's search screen, say
+  what you want to watch and the remote types it on YouTube's keyboard and searches. Your phone
+  does the speech recognition, because the TV only takes voice from the Samsung remote's own mic.
 - **Input Source and TV Settings** from the TV menu.
 - **Finds your TV** on the network, or you can enter its IP address.
 
@@ -36,7 +41,7 @@ talks to the TV over your home Wi-Fi. No ads, no account, and nothing leaves you
 
 ## Install
 
-1. Download `TVRemote-1.0.0.apk` from the [latest release](https://github.com/ManasDedge08/samsung-tv-remote/releases/latest).
+1. Download `TVRemote-1.1.0.apk` from the [latest release](https://github.com/ManasDedge08/samsung-tv-remote/releases/latest).
 2. Open it on your phone and allow installs from that source when Android asks. Play Protect may
    warn about an app from outside the Play Store; choose **Install anyway**.
 3. Open Remote, pick your TV, and select **Allow** on the TV within 30 seconds. You only do this
@@ -51,6 +56,7 @@ talks to the TV over your home Wi-Fi. No ads, no account, and nothing leaves you
 | TV name, Wi-Fi MAC, power state | `GET http://<tv>:8001/api/v2/` |
 | Power on | From light standby, the power key over the socket. From deep sleep, a Wake-on-LAN packet to the TV's Wi-Fi MAC. |
 | Finding the TV | Probes port 8001 on every address in the phone's Wi-Fi subnet. |
+| Voice search on YouTube | YouTube ignores text sent to the TV, so the remote moves focus across YouTube's on-screen keyboard and presses OK on each letter. It starts from A, where YouTube puts focus when Search opens. |
 
 ### Security
 

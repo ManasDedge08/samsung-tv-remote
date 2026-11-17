@@ -1,6 +1,21 @@
 package com.manas.tvremote.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,7 +137,7 @@ private fun RemoteScreen(vm: RemoteViewModel) {
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
         Controls(vm, Modifier.padding(horizontal = Side))
 
         if (vm.apps.isNotEmpty()) {
@@ -132,6 +147,7 @@ private fun RemoteScreen(vm: RemoteViewModel) {
     }
 
     if (vm.keyboardOpen) KeyboardSheet(onSend = vm::sendText, onDismiss = { vm.keyboardOpen = false })
+    if (vm.voiceOpen) VoiceSheet(vm)
 }
 
 /** Keyboard on the left, the TV's name in the middle (tap for its menu), power on the right. */
@@ -153,7 +169,8 @@ private fun Header(vm: RemoteViewModel, conn: Conn, modifier: Modifier) {
     }
 
     Row(modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconKey(Icons.Rounded.Keyboard, "Keyboard", Modifier.size(44.dp), iconSize = 22) { vm.keyboardOpen = true }
+        // Balances the power key so the TV name sits in the true centre.
+        Spacer(Modifier.width(44.dp))
 
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             Column(
@@ -211,23 +228,36 @@ private fun MenuItem(text: String, destructive: Boolean = false, onClick: () -> 
     )
 
 /**
- * Laid out like the Siri Remote: Back and Play/Pause, Home and Mute, then the two rockers.
+ * Laid out like the Siri Remote: two columns of round keys (Back and Home, Play/Pause and Mute,
+ * Voice and Keyboard) beside full-height channel and volume rockers.
  */
 @Composable
 private fun Controls(vm: RemoteViewModel, modifier: Modifier) {
-    Row(modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    val context = LocalContext.current
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.openVoice() else vm.voicePermissionDenied()
+    }
+    val onMic = {
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            vm.openVoice()
+        } else {
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    val round = Modifier.size(62.dp)
+
+    Row(modifier.fillMaxWidth().height(226.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
-            IconKey(Icons.AutoMirrored.Rounded.ArrowBackIos, "Back", Modifier.size(68.dp), iconSize = 22) { vm.key(Keys.BACK) }
-            Key("Play or Pause", Modifier.size(68.dp), onPress = vm::playPause) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.PlayArrow, null, tint = Palette.label, modifier = Modifier.size(22.dp))
-                    Icon(Icons.Rounded.Pause, null, tint = Palette.label, modifier = Modifier.size(18.dp))
-                }
-            }
+            IconKey(Icons.AutoMirrored.Rounded.ArrowBackIos, "Back", round, iconSize = 20) { vm.key(Keys.BACK) }
+            Key("Play or Pause", round, onPress = vm::playPause) { PlayPauseGlyph(Modifier.size(width = 24.dp, height = 14.dp)) }
+            // Works like the mic button on the TV's remote: hold, speak, let go. A quick tap also
+            // works and stops listening when you stop talking.
+            IconKey(Icons.Rounded.Mic, "Voice", round, iconSize = 24, onRelease = vm::releaseMic, onPress = onMic)
         }
         Column(Modifier.fillMaxHeight(), verticalArrangement = Arrangement.SpaceBetween) {
-            IconKey(Icons.Rounded.Home, "Home", Modifier.size(68.dp)) { vm.key(Keys.HOME) }
-            IconKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute", Modifier.size(68.dp), iconSize = 24) { vm.key(Keys.MUTE) }
+            IconKey(Icons.Rounded.Home, "Home", round, iconSize = 24) { vm.key(Keys.HOME) }
+            IconKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute", round, iconSize = 22) { vm.key(Keys.MUTE) }
+            IconKey(Icons.Rounded.Keyboard, "Keyboard", round, iconSize = 24) { vm.keyboardOpen = true }
         }
         Rocker(
             "Channel", Icons.Rounded.KeyboardArrowUp, Icons.Rounded.KeyboardArrowDown,
@@ -272,10 +302,123 @@ private fun KeyboardSheet(onSend: (String) -> Unit, onDismiss: () -> Unit) {
             LaunchedEffect(Unit) { focus.requestFocus() }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Type here to fill the TV's on-screen keyboard. YouTube and Netflix have their own keyboards and won't receive it.",
+                "Type here to fill the TV's on-screen keyboard. YouTube and Netflix use their own keyboards and won't receive this. To search YouTube, hold the mic and say what you're looking for.",
                 style = Type.footnote,
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
+        }
+    }
+}
+
+/**
+ * Voice sheet: the phone listens, shows what it hears, then the remote acts on it. The mic pulses
+ * with your voice while listening and turns into a checkmark when the command is done.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VoiceSheet(vm: RemoteViewModel) {
+    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val pulse by animateFloatAsState(
+        if (vm.listening) 1f + vm.voiceLevel * 0.35f else 1f,
+        spring(stiffness = Spring.StiffnessMediumLow),
+        label = "pulse",
+    )
+    val error = vm.voiceError
+    val done = vm.voiceDone
+    val context = LocalContext.current
+
+    ModalBottomSheet(
+        onDismissRequest = vm::closeVoice,
+        sheetState = sheet,
+        containerColor = Palette.surface,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = Side).padding(bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                when {
+                    vm.heard.isNotEmpty() -> "\u201C${vm.heard}\u201D"
+                    vm.listening -> "Listening…"
+                    else -> " "
+                },
+                style = Type.largeTitle.copy(fontSize = 22.sp, lineHeight = 28.sp, color = if (vm.heard.isEmpty()) Palette.secondary else Palette.label),
+                textAlign = TextAlign.Center,
+                minLines = 2,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(24.dp))
+            Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+                if (vm.listening) {
+                    Box(
+                        Modifier
+                            .size(76.dp)
+                            .graphicsLayer { scaleX = pulse * 1.3f; scaleY = pulse * 1.3f }
+                            .clip(CircleShape)
+                            .background(Palette.blue.copy(alpha = 0.22f))
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(76.dp)
+                        .clip(CircleShape)
+                        .background(if (vm.listening || done != null || vm.voiceWorking != null) Palette.blue else Palette.fill)
+                        .clickable(
+                            enabled = !vm.listening && done == null && vm.voiceWorking == null && !vm.micDenied,
+                            onClickLabel = "Try Again",
+                        ) { vm.listen() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (vm.voiceWorking != null) {
+                        CircularProgressIndicator(Modifier.size(30.dp), color = Palette.label, strokeWidth = 2.5.dp)
+                    } else {
+                        Icon(
+                            if (done != null) Icons.Rounded.Check else Icons.Rounded.Mic,
+                            contentDescription = if (vm.listening) "Listening" else null,
+                            tint = Palette.label,
+                            modifier = Modifier.size(34.dp),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(
+                when {
+                    done != null -> done
+                    error != null -> error
+                    vm.voiceWorking != null -> vm.voiceWorking!!
+                    vm.listening && vm.holdingMic -> "Let go when you're done."
+                    vm.listening -> "Try \u201COpen Netflix,\u201D \u201CVolume Up 5\u201D or \u201CMute.\u201D"
+                    else -> ""
+                },
+                style = Type.footnote,
+                textAlign = TextAlign.Center,
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            when {
+                vm.listening -> TextButton(onClick = vm::finishVoice) { Text("Done", style = Type.body.copy(color = Palette.blue)) }
+                vm.voiceWorking != null -> TextButton(onClick = vm::closeVoice) { Text("Stop", style = Type.body.copy(color = Palette.blue)) }
+                done == null -> Row {
+                    TextButton(onClick = vm::closeVoice) { Text("Close", style = Type.body.copy(color = Palette.blue)) }
+                    Spacer(Modifier.width(12.dp))
+                    if (vm.micDenied) {
+                        TextButton(onClick = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                            )
+                            vm.closeVoice()
+                        }) { Text("Open Settings", style = Type.body.copy(color = Palette.blue)) }
+                    } else {
+                        TextButton(onClick = vm::listen) { Text("Try Again", style = Type.body.copy(color = Palette.blue)) }
+                    }
+                }
+                else -> Spacer(Modifier.height(48.dp))
+            }
         }
     }
 }

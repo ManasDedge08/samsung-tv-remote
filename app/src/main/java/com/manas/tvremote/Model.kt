@@ -20,7 +20,7 @@ data class TvApp(val id: String, val name: String)
  */
 val KNOWN_APPS = listOf(
     TvApp("3201907018807", "Netflix"),
-    TvApp("111299001912", "YouTube"),
+    TvApp(YOUTUBE_ID, "YouTube"),
     TvApp("3201910019365", "Prime Video"),
     TvApp("3201901017640", "Disney+"),
     TvApp("3201807016597", "Apple TV"),
@@ -96,6 +96,8 @@ object Discovery {
 }
 
 /** Samsung key codes used by the remote. */
+const val YOUTUBE_ID = "111299001912"
+
 object Keys {
     const val UP = "KEY_UP"
     const val DOWN = "KEY_DOWN"

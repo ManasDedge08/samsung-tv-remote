@@ -6,7 +6,13 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -78,6 +84,20 @@ object Palette {
     val separator = Color(0xFF38383A)
     val blue = Color(0xFF0A84FF)
     val red = Color(0xFFFF453A)
+
+    /** Keys are lit from above, like a physical remote under a ceiling light. */
+    val key = Brush.verticalGradient(listOf(Color(0xFF444448), Color(0xFF29292C)))
+    /** Larger surfaces get the same light, softer. */
+    val pad = Brush.verticalGradient(listOf(Color(0xFF29292C), Color(0xFF161618)))
+    /** A hairline catching the light along the top edge. */
+    val edge = Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.20f), Color.White.copy(alpha = 0.03f)))
+}
+
+/** The material every key, rocker and pad shares: gradient fill plus a lit hairline edge. */
+// A function-typed value rather than a function: Compose's lint check for functions returning
+// Modifier crashes with this AGP and Compose BOM.
+val litSurface: (Shape, Brush) -> Modifier = { shape, fill ->
+    Modifier.clip(shape).background(fill).border(0.75.dp, Palette.edge, shape)
 }
 
 /** The phone's own system font, the way Apple uses SF everywhere. Sizes follow the iOS type ramp. */
@@ -111,17 +131,19 @@ fun Key(
     label: String,
     modifier: Modifier = Modifier,
     shape: Shape = CircleShape,
-    color: Color = Palette.fill,
+    lit: Boolean = true,
     repeat: Boolean = false,
     sink: Boolean = true,
     fireOnRelease: Boolean = false,
+    onRelease: (() -> Unit)? = null,
     onPress: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val release by rememberUpdatedState(onRelease)
     val haptic = rememberHaptic()
     val action by rememberUpdatedState(onPress)
     var pressed by remember { mutableStateOf(false) }
-    val bg by animateColorAsState(if (pressed) Palette.fillPressed else color, tween(90), label = "key")
+    val press by animateFloatAsState(if (pressed) 1f else 0f, tween(if (pressed) 60 else 220), label = "key")
     val scale by animateFloatAsState(
         if (pressed && sink) 0.94f else 1f,
         spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
@@ -130,8 +152,8 @@ fun Key(
     Box(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(shape)
-            .background(bg)
+            .then(if (lit) litSurface(shape, Palette.key) else Modifier.clip(shape))
+            .background(Color.White.copy(alpha = 0.13f * press))
             .semantics {
                 contentDescription = label
                 role = Role.Button
@@ -164,6 +186,7 @@ fun Key(
                             }
                         } finally {
                             pressed = false
+                            release?.invoke()
                         }
                     }
                 }
@@ -178,12 +201,13 @@ fun IconKey(
     icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
-    color: Color = Palette.fill,
+    lit: Boolean = true,
     tint: Color = Palette.label,
     iconSize: Int = 26,
     repeat: Boolean = false,
+    onRelease: (() -> Unit)? = null,
     onPress: () -> Unit,
-) = Key(label, modifier, color = color, repeat = repeat, onPress = onPress) {
+) = Key(label, modifier, lit = lit, repeat = repeat, onRelease = onRelease, onPress = onPress) {
     Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(iconSize.dp))
 }
 
@@ -199,14 +223,14 @@ fun Rocker(
     middle: @Composable () -> Unit = {},
 ) {
     Column(
-        modifier.width(68.dp).fillMaxHeight().clip(RoundedCornerShape(34.dp)).background(Palette.fill),
+        modifier.width(64.dp).fillMaxHeight().then(litSurface(RoundedCornerShape(32.dp), Palette.key)),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Key("$name up", Modifier.weight(1f).fillMaxWidth(), shape = RectangleShape, repeat = true, sink = false, onPress = onUp) {
+        Key("$name up", Modifier.weight(1f).fillMaxWidth(), shape = RectangleShape, lit = false, repeat = true, sink = false, onPress = onUp) {
             Icon(upIcon, null, tint = Palette.label, modifier = Modifier.size(26.dp))
         }
         middle()
-        Key("$name down", Modifier.weight(1f).fillMaxWidth(), shape = RectangleShape, repeat = true, sink = false, onPress = onDown) {
+        Key("$name down", Modifier.weight(1f).fillMaxWidth(), shape = RectangleShape, lit = false, repeat = true, sink = false, onPress = onDown) {
             Icon(downIcon, null, tint = Palette.label, modifier = Modifier.size(26.dp))
         }
     }
@@ -231,12 +255,12 @@ fun Trackpad(modifier: Modifier, showHint: Boolean, onMove: (String) -> Unit, on
             clicked = false
         }
     }
-    val click by animateColorAsState(if (clicked) Palette.fill else Palette.surface, tween(if (clicked) 40 else 260), label = "click")
+    val click by animateFloatAsState(if (clicked) 1f else 0f, tween(if (clicked) 40 else 260), label = "click")
 
     Box(
         modifier
-            .clip(RoundedCornerShape(36.dp))
-            .background(click)
+            .then(litSurface(RoundedCornerShape(32.dp), Palette.pad))
+            .background(Color.White.copy(alpha = 0.06f * click))
             .semantics {
                 contentDescription = "Touch surface. Swipe to move. Tap to select."
                 onClick { tap(); true }
@@ -304,16 +328,29 @@ fun Trackpad(modifier: Modifier, showHint: Boolean, onMove: (String) -> Unit, on
     }
 }
 
+/** SF Symbols' playpause.fill: a play triangle and two bars, drawn as one glyph. */
+@Composable
+fun PlayPauseGlyph(modifier: Modifier = Modifier, tint: Color = Palette.label) = Canvas(modifier.size(width = 28.dp, height = 16.dp)) {
+    val h = size.height
+    val u = h / 16f
+    val tri = Path().apply {
+        moveTo(0f, 1.2f * u); lineTo(12.5f * u, h / 2); lineTo(0f, h - 1.2f * u); close()
+    }
+    drawPath(tri, tint, style = Fill)
+    val bar = CornerRadius(1.2f * u)
+    drawRoundRect(tint, Offset(16.5f * u, 1.5f * u), Size(3.6f * u, h - 3f * u), bar)
+    drawRoundRect(tint, Offset(23f * u, 1.5f * u), Size(3.6f * u, h - 3f * u), bar)
+}
+
 @Composable
 fun Dpad(modifier: Modifier = Modifier, onKey: (String) -> Unit) = BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
     val side = minOf(maxWidth, maxHeight, 280.dp)
-    Box(Modifier.size(side).clip(CircleShape).background(Palette.surface)) {
+    Box(Modifier.size(side).then(litSurface(CircleShape, Palette.pad))) {
         val arrow = Modifier.size(side * 0.314f)
-        val clear = Color.Transparent
-        IconKey(Icons.Rounded.KeyboardArrowUp, "Up", arrow.align(Alignment.TopCenter), color = clear, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.UP) }
-        IconKey(Icons.Rounded.KeyboardArrowDown, "Down", arrow.align(Alignment.BottomCenter), color = clear, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.DOWN) }
-        IconKey(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Left", arrow.align(Alignment.CenterStart), color = clear, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.LEFT) }
-        IconKey(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Right", arrow.align(Alignment.CenterEnd), color = clear, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.RIGHT) }
+        IconKey(Icons.Rounded.KeyboardArrowUp, "Up", arrow.align(Alignment.TopCenter), lit = false, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.UP) }
+        IconKey(Icons.Rounded.KeyboardArrowDown, "Down", arrow.align(Alignment.BottomCenter), lit = false, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.DOWN) }
+        IconKey(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Left", arrow.align(Alignment.CenterStart), lit = false, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.LEFT) }
+        IconKey(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Right", arrow.align(Alignment.CenterEnd), lit = false, tint = Palette.secondary, iconSize = 32, repeat = true) { onKey(Keys.RIGHT) }
         Key("Select", Modifier.size(side * 0.4f).align(Alignment.Center), onPress = { onKey(Keys.OK) }) {}
     }
 }

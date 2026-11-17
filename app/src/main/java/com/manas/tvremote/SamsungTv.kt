@@ -300,6 +300,17 @@ class SamsungTv(
     }
 
     /** Returns the subset of [apps] installed on the TV, in the same order. */
+    /** Whether [appId] is the app on screen right now. */
+    suspend fun visible(appId: String): Boolean = withContext(Dispatchers.IO) {
+        val h = host ?: return@withContext false
+        runCatching {
+            val req = Request.Builder().url("http://$h:8001/api/v2/applications/$appId").build()
+            httpClient.newCall(req).execute().use { r ->
+                r.isSuccessful && r.body?.string()?.contains("\"visible\":true") == true
+            }
+        }.getOrDefault(false)
+    }
+
     suspend fun installed(apps: List<TvApp>): List<TvApp> = withContext(Dispatchers.IO) {
         val h = host ?: return@withContext emptyList()
         apps.map { app ->
