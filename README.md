@@ -70,9 +70,20 @@ You need JDK 17 and the Android SDK with platform 35.
 # app/build/outputs/apk/release/app-release.apk
 ```
 
-The release build uses the local debug signing key so you can sideload it without setting up a
-keystore. Android only installs an update over an existing copy when both have the same signing
-key, so uninstall first if you switch between your own build and a release from this page.
+Without a signing key the release build is signed with your local debug key, which is fine for
+your own phone. To sign with your own key, create `keystore.properties` in the project root (it is
+git-ignored):
+
+```properties
+storeFile=/path/to/your-release.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+Android installs an update only when it is signed with the same key as the installed copy. Builds
+from the Releases page use the project's release key, so uninstall first if you switch between
+those and your own build.
 
 ## Credits
 
